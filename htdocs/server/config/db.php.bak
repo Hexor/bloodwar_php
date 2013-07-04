@@ -1,0 +1,22 @@
+<?
+////////////////////////////////////////////////////
+//              Database Options               	  //
+////////////////////////////////////////////////////
+
+ini_set('include_path','D:\APMServ5.2.6\www\htdocs\server\lib');
+
+define('db_RDBMS', 'mysql');
+define('db_Username', 'root');
+define('db_Password', '');
+define('db_Server', '127.0.0.1');
+define('db_Port', '3306');
+define('db_Database', 'bloodwar');
+
+$GLOBALS['dbcharset'] = 'utf8';
+
+require_once("chathost.php");
+define('chat_port','9933');
+define('SERVER_ID',1);
+
+
+?>

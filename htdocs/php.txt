@@ -1,0 +1,249 @@
+使用php访问方式触发执行
+
+科技：
+
+修改TechnicFunc.php 中的方法 doGetTechnicInfo()
+
+在
+if ($has_one_upgrading) $state->can_upgrade = false;
+
+
+
+
+
+
+下方增加以下代码:
+        if($state->state == 1 && $state->state_timeleft < 0)//如果小于0 则更新状态
+        {
+        	$tid = $state->tid;
+        	//file_put_contents('c:/testupdate'.time(), $state->tid);
+        	//更新已经升级好的科技
+        	sql_query("update sys_technic set `state`=0 , `level`=`level`+1 where `tid`='$tid' and `uid`='$uid'");
+        	//删除升级队列
+        	sql_query("delete from mem_technic_upgrading where `cid`='$cid' and `tid`='$tid'");
+
+        	//更新城池可以生效的科技]
+        	$level = $state->level;
+        	updateCityTechnic($uid,$tid,$level);
+
+        }
+
+
+增加方法 updateCityTechnic($uid,$tid,$level)
+增加方法 getCityTechnicLevel($cid,$tid,$level)
+
+
+
+
+
+//更新每一个城池的科技
+function updateCityTechnic($uid,$tid,$level)
+{
+//查找用户所有的城池
+	$level = $level+1;//科技当前等级
+	$citys = sql_fetch_rows("select * from sys_city where uid='$uid'");
+
+	foreach ($citys as $city) {
+
+		$cid = $city['cid'];
+
+		$newl = getCityTechnicLevel($cid,$tid,$level);
+
+		while (!$newl) 
+		{
+			$level = $level - 1;
+
+			if($level == 0)
+			{
+				$newl = 0;
+
+				break;
+			}
+
+			$newl = getCityTechnicLevel($cid,$tid,$level);
+		}
+		//如果匹配出来的最新的科技等级不为0则对该城池的科技进行更新操作
+		if($newl != 0)
+		{
+			//查找该城池是否已经拥有该科技
+			if(sql_check("select * from sys_city_technic where cid='$cid' and tid='$tid'"))
+			{
+				//有 则更新
+				sql_query("update sys_city_technic set `level`='$newl' where cid='$cid' and tid='$tid'");
+			}else{
+				//没有则插入
+				sql_query("insert into sys_city_technic (cid,tid,level) values('$cid','$tid','$newl')");
+			}
+			
+		}
+
+	}
+}
+
+
+
+
+//从上往下匹配符合城市的科技等级
+function getCityTechnicLevel($cid,$tid,$level)
+{
+		$conditions = sql_fetch_rows("select * from cfg_technic_condition where tid='$tid' and `level`='$level' and `pre_type`=0 order by `pre_type`");	//先建筑后科技
+		
+		foreach($conditions as $key => $condition)
+		{                                     
+                            
+			$pre_building_id = $condition['pre_id'];
+			$curr_building_level = sql_fetch_one_cell("select max(`level`) from sys_building where cid='$cid' and `bid`='$pre_building_id'");
+			if (empty($curr_building_level) || $curr_building_level < $condition['pre_level'])
+			{
+				return false;
+			
+			}                                                                                     
+                          
+		}
+		return $level;
+}
+
+
+
+
+
+
+
+招兵修复：
+
+修改文件：soldierFunc.php
+
+修改方法 doGetDraftQueue
+
+在$state->time_left = $queue['state_starttime'] + $state->time_left - $queue['nowtime'];
+
+下修改：
+
+			if ($state->time_left < 1)
+			{
+
+				update_army($cid,$queue['count'],$queue['sid'],$queue['id'],$queue['xy']);
+				return doGetDraftQueue($uid,$cid,$xy);//调出新队列
+				//$state->time_left = 1;
+				//$state->state = 0;
+				//continue();//如果已经招兵完成就结束
+			}
+
+增加方法：
+
+update_army($cid,$count,$sid,$qid,$xy)
+
+
+
+/传入城市id 士兵数量 士兵类型 招兵队列 建筑标示
+ function update_army($cid,$count,$sid,$qid,$xy)
+ {
+	//查找是否已经存在士兵信息
+	//file_put_contents('c:/update', 'data');
+	if(!sql_check("select * from sys_city_soldier where `cid`='$cid' and `sid`='$sid'"))
+	{
+		//不存在 则插入
+			sql_query("insert into sys_city_soldier (`cid`,`sid`,`count`) values ('$cid','$sid','$count')");
+
+	}else{
+		//file_put_contents('c:/xxxxxxxxxxxxxxx', 'xxx');
+		//存在则更新
+		sql_query("update sys_city_soldier set `count`=`count`+'$count' where `cid`='$cid' and `sid`='$sid'"); 
+	}
+
+	//删除招兵 队列
+	sql_query("delete from sys_city_draftqueue where id='$qid'");
+	//删除正在招兵的队列
+	sql_query("delete from mem_city_draft where id='$qid'");
+
+//如果还有队列在排队，则开始新的招兵
+	if (sql_check("select * from sys_city_draftqueue where `cid`='$cid' and `xy`='$xy'"))	//如果该兵营已经有兵在造了
+	{
+
+		if (!sql_check("select * from sys_city_draftqueue where `cid`='$cid' and `xy`='$xy' and `state`=1"))	//万一不知道怎么回事没有队在训练，拉个最先的来
+		{
+			$id = sql_fetch_one_cell("select id from sys_city_draftqueue where `cid`='$cid' and `xy`='$xy' order by queuetime limit 1");																 
+			if (!empty($id))
+			{                                                                       
+				sql_query("update sys_city_draftqueue set state=1,state_starttime=unix_timestamp() where `id`='$id'"); 
+				sql_query("insert into mem_city_draft (select id,cid,xy,sid,count,state_starttime+needtime from sys_city_draftqueue where `id`='$id')");
+			} 
+		}
+	}
+
+
+ }
+
+
+
+
+
+
+
+战斗修复：
+
+修改文件：TroopFunc.php
+
+修改方法：getArmyTroops($uid,$param)
+
+猜想数据库字段含义：
+
+//task 3 掠夺
+//task 4 占领
+//state 0 前往
+//state 1 返回
+//state 2 侦查
+//state 3 战斗
+//state 4 驻军
+
+在 $troop['userid']=$troop['uid'];下增加：
+
+	//处理回城队列  这样可以实现将部队召回
+
+		if($troop['endtime'] - time() < 0 && $troop['state'] == 1)
+		{
+			//将士兵返回到城池中
+			$soldiers = $troop['soldiers'];
+
+			$cid = $troop['cid'];
+
+			$tmp_s = explode(',', $soldiers);
+
+			$s_num = $tmp_s['0'];
+
+			for ($i=0; $i < $s_num; $i++) 
+			{ 
+				$n = $i *2;
+
+				$sid = $tmp_s[$n+1];
+
+				$count = $tmp_s[$n+2];
+
+				if($sid != '')
+				{
+					//更新城池兵力
+					sql_query("update sys_city_soldier set `count`=`count`+'$count' where cid='$cid' and sid='$sid'");
+				}
+			}
+			
+			//将将领设为空闲
+			$hid = $troop['hid'];//取得将领id
+			//更新将领状态
+			sql_query("update sys_city_hero set state=0 where hid='$hid'");
+
+			//删除该队列
+			$troopid_d = $troop['id'];
+			sql_query("delete from sys_troops where `id`='$troopid_d'");
+			getArmyTroops($uid,$param);//返回最新队列
+		}
+
+		//处理开始战斗的队列
+
+		if($troop['endtime'] - time() < 0 && $troop['state'] == 0)
+		{
+			$troopid_d = $troop['id'];
+			//猜想战斗状态码
+			//sql_query("update sys_troops set `state`=3 where `id`='$troopid_d'");//如果运行这行代码，将进入战斗状态，既调出战斗面板，但是没有军队信息 并且战斗状态无法停止！
+
+			//getArmyTroops($uid,$param);//返回最新队列
+		}

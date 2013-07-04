@@ -1,0 +1,1 @@
+http://wif.12ha.com/webuserchecklogin/webgame_rxsg_userchecklogin_get.aspx?pusername=feilongguilai&ppsw=8d87d4c0b2d89fb256431089fc574006&ptype=wg&sign=b0f5162bc19d774cff7cc63ca0a43acf||1
